@@ -1,0 +1,112 @@
+x-django-template:
+  &django-template
+  image: load-results:latest
+  env_file: .env
+  depends_on:
+    - mysql
+    - clickhouse
+  networks:
+    - net
+  volumes:
+    - ./web:/load-results/web
+    - ./node:/load-results/node
+
+x-django-template-test:
+  &django-template-test
+  image: load-results:latest
+  env_file: .env
+  environment:
+    DB_HOST: mr-test-mysql
+    DB_HOST_CALENDAR: mr-test-clickhouse
+  depends_on:
+    - test-mysql
+    - test-clickhouse
+  networks:
+    - test-net
+  volumes:
+    - ./web:/load-results/web
+
+services:
+  web:
+    <<: *django-template
+    container_name: mr-web
+    command: make run
+    ports:
+      - "8000:8000"
+      - "5173:5173"
+      - "3000:3000"
+
+  check-pep8:
+    <<: *django-template
+    container_name: mr-check-pep8
+    command: make check-pep8
+    depends_on: {}
+
+  migrations-maker:
+    <<: *django-template
+    container_name: mr-migrations-maker
+    command: python3 web/load-resultsations --noinput
+
+  migrator:
+    <<: *django-template
+    container_name: mr-migrator
+    command: make migrate
+
+  mysql:
+    container_name: mr-mysql
+    image: mysql:latest
+    env_file: .env
+    volumes:
+      - volume-mysql:/var/lib/mysql
+    expose:
+      - "3307"
+    ports:
+      - "3307:3307"
+    networks:
+      - net
+
+  clickhouse:
+    container_name: mr-clickhouse
+    image: clickhouse/clickhouse-server:latest
+    env_file: .env
+    volumes:
+      - volume-clickhouse:/var/lib/clickhouse
+    expose:
+      - "9000"
+    networks:
+      - net
+
+  test:
+    <<: *django-template-test
+    container_name: mr-test
+    command: make unittests-without-sleep
+
+  test-mysql:
+    container_name: mr-test-mysql
+    image: mysql:latest
+    env_file: .env
+    expose:
+      - "3307"
+    networks:
+      - test-net
+
+  test-clickhouse:
+    container_name: mr-test-clickhouse
+    image: clickhouse/clickhouse-server:latest
+    env_file: .env
+    expose:
+      - "9000"
+    networks:
+      - test-net
+
+networks:
+  net:
+    name: net
+  test-net:
+    name: test-net
+
+volumes:
+  volume-mysql:
+    name: volume-mysql
+  volume-clickhouse:
+    name: volume-clickhouse
